@@ -5,4 +5,5 @@ This plugin works on the postprocess of pointcloud, using the Point Cloud Librar
 1. install PCL1.11.1 from https://github.com/PointCloudLibrary/pcl/releases
 2. use pcl.py generate the qtconfiguration document
 3. paste the context in qtconfiguration into the .pro
-4. 
+4. Change the enviorment setting for PCL
+5. 
