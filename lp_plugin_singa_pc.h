@@ -52,6 +52,8 @@ public:
     bool Run() override;
     bool eventFilter(QObject *watched, QEvent *event) override;
     bool importPLY();
+    bool generatePC();
+    bool rebuildmesh();
     bool resample();
     bool filter_ROR();
     bool filter_statistic();
@@ -74,12 +76,13 @@ private:
     QDoubleSpinBox *ROR_p2 = new QDoubleSpinBox();
     QDoubleSpinBox *statistic_p1 = new QDoubleSpinBox();
     QDoubleSpinBox *statistic_p2 = new QDoubleSpinBox();
-    std::vector<pcl::PointCloud<pcl::PointXYZRGB>::Ptr> cloud_buffer;
+    std::vector<pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr> cloud_buffer;
     std::vector<int > indexs_selected;
     std::shared_ptr<QWidget> mWidget;
     QLabel *labelBufferLength=nullptr;
     QOpenGLShaderProgram *mProgram = nullptr;
     std::weak_ptr<LP_ObjectImpl> mObject;
+    QMap<uint,uint> mPoints;
     std::weak_ptr<LP_RendererCamImpl> mCam;
     bool mInitialized= false;
     std::vector<QVector3D> mVs;
