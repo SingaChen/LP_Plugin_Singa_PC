@@ -21,6 +21,7 @@
 #include <QOpenGLTexture>
 #include <QOpenGLBuffer>
 #include <QVBoxLayout>
+#include <QRadioButton>
 #include <QLabel>
 #include <QComboBox>
 #include <QMatrix4x4>
@@ -86,7 +87,7 @@ void LP_Plugin_Singa_PC::FunctionalRender_L(QOpenGLContext *ctx, QSurface *surf,
 
     for(int i = 0 ;i<mVs.size();i++)
     {
-        mProgram->setUniformValue("v4_color", QVector4D( mCs[i][0]/255.0f, mCs[i][1]/255.0f, mCs[i][2]/255.0f, 1.0f ));
+        mProgram->setUniformValue("v4_color", QVector4D( mCs[i][0], mCs[i][1], mCs[i][2], 1.0f ));
         mProgram->enableAttributeArray("a_pos");
         mProgram->setAttributeArray("a_pos",&mVs[i]);
         f->glDrawArrays(GL_POINTS, 0, GLsizei(1));
@@ -103,6 +104,26 @@ void LP_Plugin_Singa_PC::FunctionalRender_L(QOpenGLContext *ctx, QSurface *surf,
 //        f->glDrawArrays(GL_POINTS, 0, GLsizei(1));
 //        cloudData.clear();
 //    }
+    if (!mPoints.empty()){                         //If some vertices are picked and record in mPoints
+        mProgram->setUniformValue("f_pointSize", 3.0f);    //Enlarge the point-size
+        mProgram->setUniformValue("v4_color", QVector4D( 0.6f, 0.1f, 0.1f, 1.0f )); //Change to another color
+        std::vector<float> pickedPoints;
+        for(int i =0;i<mPoints.size();i++)
+        {
+            for(int j = 0;j<3;j++)
+                pickedPoints.emplace_back(mVs[(mPoints.begin()+i).key()][j]);
+        }
+        mProgram->enableAttributeArray("a_pos");
+        mProgram->setAttributeArray("a_pos",pickedPoints.data(),3);
+        f->glDrawArrays(GL_POINTS, 0, pickedPoints.size()/3);
+        /*
+        std::vector<uint> list(mPoints.size());
+        for ( int i = 0; i<list.size(); ++i ){
+            list[i] = (mPoints.begin()+i).key();
+        }
+        // ONLY draw the picked vertices again
+        f->glDrawElements(GL_POINTS, GLsizei(mPoints.size()), GL_UNSIGNED_INT, list.data());*/
+    }
 
 
     mProgram->disableAttributeArray("a_pos");   //Disable the "a_pos" buffer
@@ -131,6 +152,19 @@ QWidget *LP_Plugin_Singa_PC::DockUi()
     glayoutA->addWidget(buttonGeneratePC,0,1);
     groupA->setLayout(glayoutA);
     layout->addWidget(groupA);
+
+    QGroupBox *groupAA = new QGroupBox;
+    groupAA->setMaximumWidth(240);
+    buttonSelect = new QRadioButton(tr("SelectMode"),mWidget.get());
+    QGridLayout *glayoutAA = new QGridLayout;
+    buttonSelect->setChecked(false);
+    glayoutAA->addWidget(buttonSelect,0,0);
+    buttonDepth = new QRadioButton(tr("Depth"),mWidget.get());
+    buttonDepth->setChecked(false);
+    glayoutAA->addWidget(buttonDepth,0,1);
+    glayoutAA->setContentsMargins(5,2,5,2);
+    groupAA->setLayout(glayoutAA);
+    layout->addWidget(groupAA);
 
     QGroupBox *groupB = new QGroupBox;
     groupB->setMaximumWidth(240);
@@ -256,6 +290,11 @@ QWidget *LP_Plugin_Singa_PC::DockUi()
     connect(buttonExportPLY, &QPushButton::clicked,[this](){
         emit glUpdateRequest();
     });
+    connect(buttonSave, &QPushButton::clicked,[this](){
+        saveMesh();
+        labelBufferLength->setText(QString::number(cloud_buffer.size()));
+        emit glUpdateRequest();
+    });
 
     return mWidget.get();
 }
@@ -298,49 +337,20 @@ bool LP_Plugin_Singa_PC::eventFilter(QObject *watched, QEvent *event)
         }
         return LP_OpenMeshw() = std::static_pointer_cast<LP_OpenMeshImpl>(obj.lock());
     };
-
+    event->ignore();
     if ( QEvent::MouseButtonRelease == event->type()){
         auto e = static_cast<QMouseEvent*>(event);
-
-        if ( e->button() == Qt::LeftButton ){
-            if (!mObject.lock()){
-                auto rb = g_GLSelector->RubberBand();
-                auto &&Object = g_GLSelector->SelectInWorld("Shade",rb->pos()+rb->rect().center());
-                if(Object.empty()){
-                    return false;
-                }
-//                auto c = _isMesh(Object.front());
-                auto &c = Object.front();
-                if ( c.lock()&&LP_PointCloudImpl::mTypeName == c.lock()->TypeName()){
-                    mObject = c;
-                    auto pc = std::static_pointer_cast<LP_PointCloudImpl>(c.lock());
-                    mVs = pc->Points();
-                    mNs = pc->Normals();
-                    mCs = pc->Colors();
-                    emit glUpdateRequest();
-                    return true;    //Since event filter has been called
-
-                }
-            }
-
-        }
-    }
-/*
-    if ( QEvent::MouseButtonRelease == event->type()){
-        auto e = static_cast<QMouseEvent*>(event);
-
-        if ( e->button() == Qt::LeftButton ){
-            //Select the entity vertices
+        if(buttonSelect->isChecked())
+        {
             if ( !mVs.empty()){
                 auto rb = g_GLSelector->RubberBand();
-
-                qDebug() <<"rb->pos:"<< rb->pos();
                 auto &&tmp = g_GLSelector->SelectPoints3D("Shade",
                                                     &mVs.at(0)[0],
                                                     mVs.size(),
                                                     rb->pos()+rb->rect().center(), false,
                                                     rb->width(), rb->height());
-                if ( !tmp.empty()){
+                if ( !tmp.empty())
+                {
                     for (auto pt_id : tmp ){
                         if (Qt::ControlModifier & e->modifiers()){
                             if ( !mPoints.contains(pt_id)){
@@ -362,65 +372,83 @@ bool LP_Plugin_Singa_PC::eventFilter(QObject *watched, QEvent *event)
                     }
 
                     if (!mPoints.empty()){
-    //                    QStringList pList;
-    //                    int id=0;
-    //                    for ( auto &p : mPoints ){
-    //                        pList << QString("%5: %1 ( %2, %3, %4 )").arg(p,8)
-    //                                 .arg(c->mesh()->points()[p][0],6,'f',2)
-    //                                .arg(c->mesh()->points()[p][1],6,'f',2)
-    //                                .arg(c->mesh()->points()[p][2],6,'f',2)
-    //                                .arg(id++, 3);
-    //                    }
-    //                    mFeaturePoints.setStringList(pList);
                         emit glUpdateRequest();
                     }
-                    return true;
+                    event->accept();
                 }
-            } else {
+            }
+            else
+            {
+                auto rb = g_GLSelector->RubberBand();
                 auto &&tmp = g_GLSelector->SelectInWorld("Shade",
-                                                        e->pos());
+                                                        rb->pos()+rb->rect().center());
                 for ( auto &o : tmp ){
                     if ( o.lock() && LP_PointCloudImpl::mTypeName == o.lock()->TypeName()) {
                         mObject = o;
                         auto pc = std::static_pointer_cast<LP_PointCloudImpl>(o.lock());
                         mVs = pc->Points();
                         mNs = pc->Normals();
+                        mCs = pc->Colors();
                         LP_Document::gDoc.RemoveObject(std::move(o));
+                        emit glUpdateRequest();
+                        event->accept();;    //Since event filter has been called
+                    }
+                }
+            }
+        }
+        else
+        {
+            if ( e->button() == Qt::LeftButton&&mVs.empty() ){
+                if (!mObject.lock()){
+                    auto rb = g_GLSelector->RubberBand();
+                    auto &&Object = g_GLSelector->SelectInWorld("Shade",rb->pos()+rb->rect().center());
+                    if(Object.empty()){
+                        return false;
+                    }
+                    auto &c = Object.front();
+                    if ( c.lock()&&LP_PointCloudImpl::mTypeName == c.lock()->TypeName()){
+                        mObject = c;
+                        auto pc = std::static_pointer_cast<LP_PointCloudImpl>(c.lock());
+                        mVs = pc->Points();
+                        mNs = pc->Normals();
+                        mCs = pc->Colors();
                         emit glUpdateRequest();
                         return true;    //Since event filter has been called
                     }
                 }
             }
-        }else if ( e->button() == Qt::RightButton ){
-            mVs.clear();
-            mNs.clear();
-            //mFids.clear();
-            //mPoints.clear();
-            emit glUpdateRequest();
-            return true;
-//            QStringList list;
-//            mFeaturePoints.setStringList(list);
+//            else if ( e->button() == Qt::RightButton )
+//            {
+//                mVs.clear();
+//                mNs.clear();
+//                mFids.clear();
+//                mPoints.clear();
+//                emit glUpdateRequest();
+//                event->accept();
+//            }
         }
-    } else if (QEvent::KeyPress == event->type()){
+    }
+    else if (QEvent::KeyPress == event->type()&&buttonSelect->isChecked())
+    {
         QKeyEvent *e = static_cast<QKeyEvent*>(event);
         switch(e->key()){
         case Qt::Key_Delete:{
             auto pc = std::static_pointer_cast<LP_PointCloudImpl>(mObject.lock());
             const int nVs = mVs.size();
-            std::vector<QVector3D> newVs, newNs;
+            std::vector<QVector3D> newVs, newNs, newCs;
             for ( int i=0; i<nVs; ++i ){
                 auto it = mPoints.find(i);
                 if ( it == mPoints.end()) {
-                    if ( qFabs(mVs[i].z()) > 1.3f ) {
-                        continue;
-                    }
                     newVs.emplace_back(mVs[i]);
                     newNs.emplace_back(mNs[i]);
+                    newCs.emplace_back(mCs[i]);
                 }
             }
             mVs = newVs;
             mNs = newNs;
+            mCs = newCs;
             mPoints.clear();
+            rebuildPC();
             emit glUpdateRequest();
             break;
         }
@@ -429,6 +457,7 @@ bool LP_Plugin_Singa_PC::eventFilter(QObject *watched, QEvent *event)
             auto pc = std::static_pointer_cast<LP_PointCloudImpl>(mObject.lock());
             pc->SetPoints(std::move(mVs));
             pc->SetNormals(std::move(mNs));
+            pc->SetColors(std::move(mCs));
             mVs.clear();
             mNs.clear();
             mPoints.clear();
@@ -439,7 +468,6 @@ bool LP_Plugin_Singa_PC::eventFilter(QObject *watched, QEvent *event)
         }
         }
     }
-*/
     return QObject::eventFilter(watched, event);
 }
 
@@ -481,7 +509,7 @@ bool LP_Plugin_Singa_PC::generatePC()
     for(int i = 0;i<c->Points().size();i++)
     {
         pcl::PointXYZRGBNormal p(mVs[i][0],mVs[i][1],mVs[i][2],
-                0,0,0,/*mCs[i][0],mCs[i][1],mCs[i][2],*/
+                (uint8_t)(mCs[i][0]*255),(uint8_t)(mCs[i][1]*255),(uint8_t)(mCs[i][2]*255),
                 mNs[i][0],mNs[i][1],mNs[i][2]);
         cloud->emplace_back(p);
     }
@@ -502,13 +530,49 @@ bool LP_Plugin_Singa_PC::rebuildmesh()
         for(int j = 0;j<3;j++)
         {
             mN[j] = (cloud->points[i]._PointXYZRGBNormal::normal[j]);
-            mC[j] = (cloud->points[i]._PointXYZRGBNormal::data_c[j]);
+
             mV[j] = (cloud->points[i]._PointXYZRGBNormal::data[j]);
         }
+        mC[0] = ((float)cloud->points[i]._PointXYZRGBNormal::r)/255.0f;
+        mC[1] = ((float)cloud->points[i]._PointXYZRGBNormal::g)/255.0f;
+        mC[2] = ((float)cloud->points[i]._PointXYZRGBNormal::b)/255.0f;
         mNs.emplace_back(mN);
         mCs.emplace_back(mC);
         mVs.emplace_back(mV);
     }
+    return true;
+}
+
+bool LP_Plugin_Singa_PC::rebuildPC()
+{
+    if(mVs.empty()||mVs.size()==cloud_buffer.back()->size()) return false;
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGBNormal>);
+    for(int i = 0;i<mVs.size();i++)
+    {
+        pcl::PointXYZRGBNormal p(mVs[i][0],mVs[i][1],mVs[i][2],
+                (uint8_t)(mCs[i][0]*255),(uint8_t)(mCs[i][1]*255),(uint8_t)(mCs[i][2]*255),
+                mNs[i][0],mNs[i][1],mNs[i][2]);
+        cloud->emplace_back(p);
+    }
+    cloud_buffer.emplace_back(cloud);
+    labelBufferLength->setText(QString::number(cloud_buffer.size()));
+    qDebug()<<"The amount of current PointCloud is :"<<cloud_buffer.back()->size();
+    return true;
+}
+
+bool LP_Plugin_Singa_PC::saveMesh()
+{
+    auto pc = std::static_pointer_cast<LP_PointCloudImpl>(mObject.lock());
+    pc->SetPoints(std::move(mVs));
+    pc->SetNormals(std::move(mNs));
+    pc->SetColors(std::move(mCs));
+    mVs.clear();
+    mNs.clear();
+    mCs.clear();
+    mPoints.clear();
+    cloud_buffer.clear();
+    LP_Document::gDoc.AddObject(std::move(mObject));
+    emit glUpdateRequest();
     return true;
 }
 

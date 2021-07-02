@@ -13,6 +13,7 @@
 #include <QWaitCondition>
 #include <QFutureWatcher>
 #include <QDoubleSpinBox>
+#include <QRadioButton>
 #include "pcl/io/pcd_io.h" //PCL的PCD格式文件的输入输出头文件
 #include "pcl/io/ply_io.h"
 #include "pcl/point_types.h" //PCL对各种格式的点的支持头文件
@@ -54,6 +55,8 @@ public:
     bool importPLY();
     bool generatePC();
     bool rebuildmesh();
+    bool rebuildPC();
+    bool saveMesh();
     bool resample();
     bool filter_ROR();
     bool filter_statistic();
@@ -67,6 +70,7 @@ public:
     QString MenuName() override;
     QAction *Trigger() override;
 
+
 private:
     QThreadPool mPool;
     QDoubleSpinBox *resample_x = new QDoubleSpinBox();
@@ -76,6 +80,8 @@ private:
     QDoubleSpinBox *ROR_p2 = new QDoubleSpinBox();
     QDoubleSpinBox *statistic_p1 = new QDoubleSpinBox();
     QDoubleSpinBox *statistic_p2 = new QDoubleSpinBox();
+    QRadioButton *buttonSelect = new QRadioButton();
+    QRadioButton *buttonDepth = new QRadioButton();
     std::vector<pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr> cloud_buffer;
     std::vector<int > indexs_selected;
     std::shared_ptr<QWidget> mWidget;
@@ -88,6 +94,8 @@ private:
     std::vector<QVector3D> mVs;
     std::vector<QVector3D> mNs;
     std::vector<QVector3D> mCs;
+
+    std::vector<uint> mFids;
     void initializeGL();
 };
 
