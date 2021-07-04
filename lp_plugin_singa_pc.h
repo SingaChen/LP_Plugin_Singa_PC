@@ -57,6 +57,7 @@ public:
     bool rebuildmesh();
     bool rebuildPC();
     bool saveMesh();
+    bool exportObj();
     bool resample();
     bool filter_ROR();
     bool filter_statistic();

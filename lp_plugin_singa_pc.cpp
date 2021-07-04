@@ -288,6 +288,7 @@ QWidget *LP_Plugin_Singa_PC::DockUi()
         emit glUpdateRequest();
         });
     connect(buttonExportPLY, &QPushButton::clicked,[this](){
+        exportObj();
         emit glUpdateRequest();
     });
     connect(buttonSave, &QPushButton::clicked,[this](){
@@ -688,6 +689,53 @@ bool LP_Plugin_Singa_PC::remove_manual()
     {
         cloud->erase(cloud->begin()+indexs_selected[i]);
     }
+    return true;
+}
+
+bool LP_Plugin_Singa_PC::exportObj()
+{
+    if(!mObject.lock()) {qDebug()<<"No object found!"; return false;}
+    auto pc = std::static_pointer_cast<LP_PointCloudImpl>(mObject.lock());
+    LP_OpenMesh mesh;
+    qDebug()<<pc->Points().size();
+    if(pc->Points().size()==0) return false;
+    if ( LP_PointCloudImpl::mTypeName == mObject.lock()->TypeName())
+    {
+        MyMesh m = std::make_shared<OpMesh>();
+        auto &pts = pc->Points();
+        auto &norms = pc->Normals();
+        auto nv = pts.size();
+        for ( size_t i=0; i<nv; ++i)
+        {
+            auto &pt = pts[i],
+                 &nl = norms[i];
+            OpMesh::Point p;
+            OpMesh::Normal n;
+            p[0] = pt.x();
+            p[1] = pt.y();
+            p[2] = pt.z();
+            n[0] = nl.x();
+            n[1] = nl.y();
+            n[2] = nl.z();
+            auto vh = m->add_vertex(p);
+            m->set_normal(vh, n);
+        }
+        mesh = LP_OpenMeshImpl::Create(nullptr);
+        mesh->SetMesh(m);
+    }
+    if ( !mesh ){
+        qInfo() << "No object selected";
+        return false;
+    }
+
+
+    auto file = QFileDialog::getSaveFileName(0,tr("Export OBJ"), "",
+                                             tr("Wavefront (*.obj)"));
+
+    if ( file.isEmpty()){
+        return false;
+    }
+
     return true;
 }
 
