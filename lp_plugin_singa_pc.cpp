@@ -5,6 +5,7 @@
 #include "lp_renderercam.h"
 #include "lp_pointcloud.h"
 #include "Commands/lp_commandmanager.h"
+#include "Commands/lp_cmd_export_obj.h"
 #include "Commands/lp_cmd_import_opmesh.h"
 #include "renderer/lp_glselector.h"
 #include "renderer/lp_glrenderer.h"
@@ -338,6 +339,7 @@ bool LP_Plugin_Singa_PC::eventFilter(QObject *watched, QEvent *event)
         }
         return LP_OpenMeshw() = std::static_pointer_cast<LP_OpenMeshImpl>(obj.lock());
     };
+    auto lastSelect = g_GLSelector->RubberBand();
     event->ignore();
     if ( QEvent::MouseButtonRelease == event->type()){
         auto e = static_cast<QMouseEvent*>(event);
@@ -453,7 +455,87 @@ bool LP_Plugin_Singa_PC::eventFilter(QObject *watched, QEvent *event)
             emit glUpdateRequest();
             break;
         }
-        case Qt::Key_Space:
+        case Qt::Key_Space:{
+            bool isClear = false;
+            for(;!isClear;)
+            {
+                if(mPoints.empty()) isClear = true;
+                auto pc = std::static_pointer_cast<LP_PointCloudImpl>(mObject.lock());
+                const int nVs = mVs.size();
+                std::vector<QVector3D> newVs, newNs, newCs;
+                for ( int i=0; i<nVs; ++i ){
+                    auto it = mPoints.find(i);
+                    if ( it == mPoints.end()) {
+                        newVs.emplace_back(mVs[i]);
+                        newNs.emplace_back(mNs[i]);
+                        newCs.emplace_back(mCs[i]);
+                    }
+                }
+                mVs = newVs;
+                mNs = newNs;
+                mCs = newCs;
+                mPoints.clear();
+                rebuildPC();
+                if ( !mVs.empty()){
+                    auto rb = g_GLSelector->RubberBand();
+                    auto &&tmp = g_GLSelector->SelectPoints3D("Shade",
+                                                        &mVs.at(0)[0],
+                                                        mVs.size(),
+                                                        rb->pos()+rb->rect().center(), false,
+                                                        rb->width(), rb->height());
+                    if ( !tmp.empty())
+                    {
+                        for (auto pt_id : tmp ){
+                            if (Qt::ControlModifier & e->modifiers()){
+                                if ( !mPoints.contains(pt_id)){
+                                    mPoints.insert(pt_id, mPoints.size());
+                                }
+                            }else if (Qt::ShiftModifier & e->modifiers()){
+                                if ( mPoints.contains(pt_id)){
+                                    qDebug() << mPoints.take(pt_id);
+                                }
+                            }else{
+//                                mPoints.clear();
+//                                mPoints.insert(pt_id,0);
+                                if ( !mPoints.contains(pt_id)){
+                                    mPoints.insert(pt_id, mPoints.size());
+                                }
+                            }
+                        }
+
+                        QString info("Picked Points:");
+                        for ( auto &p : mPoints ){
+                            info += tr("%1\n").arg(p);
+                        }
+
+                        if (!mPoints.empty()){
+                            emit glUpdateRequest();
+                        }
+                        event->accept();
+                    }
+                }
+                else
+                {
+                    auto rb = g_GLSelector->RubberBand();
+                    auto &&tmp = g_GLSelector->SelectInWorld("Shade",
+                                                            rb->pos()+rb->rect().center());
+                    for ( auto &o : tmp ){
+                        if ( o.lock() && LP_PointCloudImpl::mTypeName == o.lock()->TypeName()) {
+                            mObject = o;
+                            auto pc = std::static_pointer_cast<LP_PointCloudImpl>(o.lock());
+                            mVs = pc->Points();
+                            mNs = pc->Normals();
+                            mCs = pc->Colors();
+                            LP_Document::gDoc.RemoveObject(std::move(o));
+                            emit glUpdateRequest();
+                            event->accept();;    //Since event filter has been called
+                        }
+                    }
+                }
+            }
+            emit glUpdateRequest();
+            break;
+        }
         case Qt::Key_Enter:{
             auto pc = std::static_pointer_cast<LP_PointCloudImpl>(mObject.lock());
             pc->SetPoints(std::move(mVs));
@@ -735,7 +817,13 @@ bool LP_Plugin_Singa_PC::exportObj()
     if ( file.isEmpty()){
         return false;
     }
-
+    auto cmd = new LP_Cmd_Export_Obj;
+    cmd->SetFile(file);
+    cmd->SetMesh(std::move(mesh));
+    if ( !cmd->VerifyInputs()){
+        delete cmd;
+        return false;
+    }
     return true;
 }
 
